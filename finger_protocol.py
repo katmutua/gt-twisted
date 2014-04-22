@@ -1,7 +1,7 @@
-
 from twisted.application import internet, service
 from twisted.internet import protocol, reactor, defer
 from twisted.protocols import basic
+
 
 class FingerProtocol(basic.LineReceiver):
     def lineReceived(self, user):
@@ -18,6 +18,7 @@ class FingerProtocol(basic.LineReceiver):
 
         d.addCallback(writeResponse)
 
+
 class FingerFactory(protocol.ServerFactory):
     protocol = FingerProtocol
 
@@ -26,6 +27,7 @@ class FingerFactory(protocol.ServerFactory):
 
     def gerUser(self, user):
         return defer.succeed(self.users.get(user, "No such user"))
+
 
 class FingerSetterProtocol(basic.LineReceiver):
     def connectionMade(self):
@@ -39,6 +41,7 @@ class FingerSetterProtocol(basic.LineReceiver):
         status = self.lines[1]
         self.factory.setUser(user, status)
 
+
 class FingerSetterFactory(protocol.ServerFactory):
     protocol = FingerSetterProtocol
 
@@ -48,10 +51,34 @@ class FingerSetterFactory(protocol.ServerFactory):
     def setUser(self, user, status):
         self.fingerFactory.users[user] = status
 
-ff = FingerFactory(moshez='Happy and well')
-fsf = FingerSetterFactory(ff)
 
+class FingerService(service.Service):
+    def __init__(self, **kwargs):
+        self.users = kwargs
+
+    def getUser(self, user):
+        return defer.succeed(self.users.get(user, "No such user"))
+
+    def setUser(self, user, status):
+        self.users[user] = status
+
+    def getFingerFactory(self):
+        f = protocol.ServerFactory()
+        f.protocol = FingerProtocol
+        f.getUser = self.getUser()
+
+    def getFingerSetterFactory(self):
+        f = protocol.ServerFactory()
+        f.protocol = FingerSetterFactory
+        f.setUser = self.setUser()
+        return f
+
+
+f = FingerFactory(moshez='Happy and well')
 application = service.Application('finger', uid=1, gid=1)
+
 serviceCollection = service.IServiceCollection(application)
-internet.TCPServer(79, ff).setServiceParent(serviceCollection)
-internet.TCPServer(1079, fsf).setServiceParent(serviceCollection)
+internet.TCPServer(79, f.getFingerFactory()
+).setServiceParent(serviceCollection)
+internet.TCPServer(1079, f.getFingerSetterFactory()
+).setServiceParent(serviceCollection)
